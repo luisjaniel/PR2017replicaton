@@ -1,0 +1,516 @@
+---
+title: "BioHackPR"
+output: html_document
+date: Replicathon 2017
+author: Marijulie Martinez, Dayanara Velazquez, Jose Ortiz, Luis Maldonado 
+---
+
+To load the data into the current working session. 
+```{r data}
+library(readr)
+rawFile <- ("rawPharmacoData.csv")
+pharmacoData <- read.csv(rawFile)
+```
+
+### Exploratory analysis of pharmacogenomic data
+
+1. How many cell-lines are contained in the data?
+
+To find how many cell-lines are in the data, we count the cellLine across the dataset. 
+```{r cell lines}
+length( levels( pharmacoData$cellLine ) )
+```
+>There are 288 cell lines in the data. 
+
+2. What drug concentrations were used in each study?
+
+To find the drug concentratios we create a vector for each study and then make a frame list of each concentration by study.
+```{r concentration}
+gdsc<-pharmacoData$concentration[pharmacoData$study=='GDSC']
+ccle<-pharmacoData$concentration[pharmacoData$study=='CCLE']
+unique(ccle)
+unique(gdsc)
+as.data.frame(unique(ccle))
+as.data.frame(unique(gdsc))
+```
+>To see how was the frequency of the concetrations per drug and study we create a histogram. 
+```{r concentration-hist}
+library(ggplot2)
+ggplot( pharmacoData, aes (log2(concentration) )) +
+    geom_histogram(fill = "blue", colour="black") +
+    facet_wrap (~drug + study)
+```
+```{r concentration2, eval=FALSE, include=FALSE}
+tapply( pharmacoData$concentration, pharmacoData$study, function(x){
+        length( unique( x ) )
+    })
+```
+
+>There are 8 concentrations in the CCLE study and 32 concentrations in the GDSC, as presented in the tables above. 
+
+3. Histograms, appart from telling how is the data
+distributed, can also make evident potential
+problems with the data. Plot a histogram
+of drug viabilities. Does it look as one would
+expect from the description of the data?
+
+To view the distribution of the data me made an historgram of the viability between drugs. 
+```{r hist.viability}
+ggplot( pharmacoData, aes(viability) ) +
+    geom_histogram(fill = "red", colour="black", stat="bin", bins=30)+
+    facet_wrap(~drug)
+```
+
+>As we see the histogram many drugs are out of the viability range, we would expect that the viability of each drug was between 0 and 100. 
+
+4. How many viability data points are within the
+expected range according to the definition of viability (e.g. above 0 
+and below 100)? Try to come up with explanations about
+the values that are out of range. Are these due to technical
+issues? Biology?
+
+Viability between the range 0-100 and how many have a viability higher than 100.
+```{r viability}
+sum( pharmacoData$viability > 0 )
+sum( pharmacoData$viability < 100 )
+sum(pharmacoData$viability>=100)
+```
+
+>Viability scores are the percentage of cells that survive upon exposure to a certain drug, this can range between 0 and 100. As we see they are many data point (15,778) that are out of range. This may be, in the biological line, because some cells were susceptible to the drugs....... 
+
+5. Read the csv file containing the summarized data files. What kind
+of variables are in the data? What does each column represents?
+
+To open a summarized data file and see the variables and what they represent. 
+```{r}
+#Read csv file.
+fileName<- "summarizedPharmacoData.csv"
+data<-read.csv(fileName)
+
+#Print the first six rows of data and its structure.
+head(data)
+str(data)
+```
+
+>The variables celline and drug are categorical variables, and the variables ic50_CCLE, auc_CCLE, ic50_GDSC and auc_GDSC are numerical. The first column *celline* represent the different types of cell; *drug*  represent the type of drug; *ic50_CCLE*  represent the estimated concentration of the drug that will result in half (50%) of the cells surviving in the CCLE study; *auc_CCLE*  represent the area above the curve estimated by the drug concentration and viability data in the CCLE study; *ic50_GDSC* epresent the estimated concentration of the drug that will result in half (50%) of the cells surviving in the GDSC study; and *auc_GDSC* represent the area above the curve estimated by the drug concentration and viability data in the GDSC study. 
+
+6. Plot a histogram of the viability scores as a function of the drug
+doses. Are stronger drug concentrations consistent with lower viability scores?
+
+To see the distribution of viability scores as functiono of the drug drug we did an histogram.
+
+```{r histogram doseID merge}
+ggplot(pharmacoData, aes(x=viability, fill=doseID)) +
+    geom_histogram(binwidth=2, alpha=.5, position="identity")+ xlab("Viability %")
+```
+
+To see better the distribution presented above we did a facet grid, where we can see the distribution per doses ID. 
+
+```{r histogram per doseID}
+ggplot(pharmacoData, aes(x=viability,  fill=doseID)) +
+    geom_histogram(binwidth=15, alpha=.5, position="identity")+ xlab("Viability %")+ facet_grid(doseID ~.)
+```
+
+>There is no consistency between stronger drug concentrations and lower viability scores. As we see the histogram almost all drug doses have the same viability scores. 
+
+### Using Correlation Measures to Assess Replicability of Drug Response Studies
+
+```{r read csv}
+cellLinesSummary <- read.csv("summarizedPharmacoData.csv", header=TRUE)
+str(cellLinesSummary)
+```
+
+1. Create a scatterplot for each drug comparing the AUC in GDSC and CCLE for all cell lines (hint: code from Tutorial 2 may help)
+
+To create a scatterplot for each drug comparing the AUC in GDSC and CCLE for all cell lines.
+```{r scatterplot}
+ggplot(aes(x=(auc_GDSC), y=(auc_CCLE)), data=cellLinesSummary) +
+    geom_point(cex=0.5) + 
+    facet_wrap(facets=~drug) +
+    xlab("GDSC IC50") +
+    ylab("CCLE IC50")
+```
+
+2. Calculate correlation coefficients of the AUC in GDSC and CCLE for each drug (hint: code from Tutorial 2 may help). 
+
+To calculate the correlation coefficient for each drug. 
+```{r corr cof AUC}
+set.seed(920)
+
+allDrugs <- unique( as.character(cellLinesSummary$drug))
+
+x <- allDrugs[1]
+allCors <-sapply( allDrugs, function(x){
+   with( subset( cellLinesSummary, drug == x ),
+      cor( auc_CCLE, auc_GDSC ) )
+} )
+```
+To add a new column for the correlation coefficient per drug. 
+```{r corr cof}
+allCors[match(cellLinesSummary$drug, names(allCors))]
+cellLinesSummary$cor.coeff <- allCors[match(cellLinesSummary$drug, allDrugs)]
+head(cellLinesSummary)
+```
+Concatenate the drug name with the correlation coefficient.
+```{r corr concat}
+corr.concat<- paste(cellLinesSummary$drug, round(cellLinesSummary$cor.coeff,2), sep="-")
+table(corr.concat)
+```
+To add the concatenate as a new column. 
+```{r add concat}
+cellLinesSummary$cor.concat <- corr.concat
+table( cellLinesSummary$cor.concat )
+tail(cellLinesSummary)
+```
+
+To obtain the correlation coefficients of the AUC in GDSC and CCLE for each drug we did a scatterplot grouped by the new column of concatenate values.
+```{r corr cof graphic}
+ggplot(data=cellLinesSummary, aes(x=auc_GDSC,y=auc_CCLE)) +
+  geom_point(cex=0.5) +
+  ggtitle(paste0("Correlation coefficient")) + 
+  geom_smooth(method='lm', se=FALSE)+  facet_wrap(~cor.concat)+theme(plot.title = element_text(hjust = 0.5))
+```
+
+3. Based on the scatterplot and correlation values, would you say that they tend to agree? Why or why not?
+
+In some ocassions they tend to agree like for example in Nilotnib (.77) and PD-0325901 (.65) that have an strong correlation. But the rest of the drugs have a moderate to weak correlation. 
+
+4. Does the AUC or IC50 suggest more agreement between the studies? 
+
+```{r corr cof AUC 1}
+
+set.seed(920)
+cor.coef <- round(cor(cellLinesSummary$auc_CCLE, cellLinesSummary$auc_GDSC),2)
+ggplot(data=cellLinesSummary, aes(x=auc_GDSC,y=auc_CCLE)) +
+  geom_point() +
+  ggtitle(paste0("Correlation coefficient = ", cor.coef)) + 
+  geom_smooth(method='lm', se=FALSE) +theme(plot.title = element_text(hjust = 0.5))
+```
+```{r corr cof IC50}
+
+set.seed(920)
+cor.coef <- round(cor(cellLinesSummary$ic50_CCLE, cellLinesSummary$ic50_GDSC),2)
+ggplot(data=cellLinesSummary, aes(x=-log10(ic50_GDSC),y=-log10(ic50_CCLE))) +
+  geom_point() +
+  ggtitle(paste0("Correlation coefficient = ", cor.coef)) + 
+  geom_smooth(method='lm', se=FALSE) +theme(plot.title = element_text(hjust = 0.5))
+```
+
+>Overall we can conclude that there is more agreement in the AUC between studies, with a magnitude of correlation of 0.67 that is consider a strong correlation. 
+
+6. If you calculated more than one type of correlation coefficient (for example Pearson and Spearman), how do they differ? Which do you think is a better summary of the consistency between the two studies? 
+
+To compare the correlation coefficient using Pearson and Spearman in both studies. 
+```{r corr comp}
+corrcomp <- data.frame(x=cellLinesSummary$auc_CCLE, y=cellLinesSummary$auc_GDSC)
+cor.pearson <- round(cor(corrcomp$x, corrcomp$y, method="pearson"),2)
+cor.spearman <- round(cor(corrcomp$x, corrcomp$y, method="spearman"),2)
+ggplot(data=corrcomp, aes(x=x,y=y)) +
+  geom_point() +
+  ggtitle(paste0("Pearson = ", cor.pearson, ", Spearman = ", cor.spearman))+ xlab("CCLE AUC")+ ylab("GDSC AUC")+theme(plot.title = element_text(hjust = 0.5))
+```
+
+For determine if the data is normally distributed.
+```{r SW}
+shapiro.test(cellLinesSummary$auc_CCLE)
+shapiro.test(cellLinesSummary$auc_GDSC)
+
+```
+
+>P-value is less than 0.05, therefore we can conclude that the data is not  normally distributed. >As we can see  the Pearson and Spearman correlation  differ on only by 0.7. But as we saw in the shapiro wilk test, the data is not normally distributed therefore we need to use the non-parametric method for correlation that is the Spearman's method. 
+
+For summarize different measures of correlation of the AUC values (Pearson and Spearman correlation). 
+```{r auc correlation}
+library(plyr)
+library(dplyr)
+drugCorrs <- cellLinesSummary %>% 
+    group_by(drug) %>% summarise (Pearson_auc=cor(auc_GDSC, auc_CCLE, method="pearson"), Spearman_auc=cor(auc_GDSC, auc_CCLE, method="spearman"))
+
+drugCorrs
+```
+Barplot for summarize different measures of correlation of the AUC values to assess the level of 
+replication between the experiments.
+```{r barplot correlations auc}
+library(reshape2)
+drugCorrs <- melt(drugCorrs)
+colnames(drugCorrs) <- c("Drug", "Measure", "Correlation")
+
+drugCorrs_AUC<- drugCorrs[grep("auc", drugCorrs$Measure),]
+ggplot(data=drugCorrs_AUC, aes(x=Drug, y=Correlation, fill=Measure, group=Measure)) +
+  geom_bar(stat="identity", position=position_dodge(), colour="white") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set1")
+```
+
+7. We have explored Pearson and Spearman correlation, but what about other correlation measures? For example, you could try out distance correlation, which is sensitive to nonlinear relationships. You can find this measure in the `energy` R package, which you'll need to install and load with the following commands:
+
+     Then, you can compute distance correlation with the `dcor()` function. How does this correlation measure compare to Pearson and Spearman? Do your conclusions about the agreement between the two studies change at all using this measure?
+     
+For computing the distance correlation between CCLE AUC and GDSC AUC.
+
+```{r distance cor}
+library(energy)
+dcor(cellLinesSummary$auc_CCLE, cellLinesSummary$auc_GDSC)
+```
+
+>We can see that the distance correlation coefficient is between the Pearson and Spearman measure. This change our conclusions, because distance correlation is used with non-parametric data with high dimension data we can said that this would be a better summary of correlation for the dataset. 
+
+### Identifying biological factors that influence replicability of pharmacogenomic studies
+
+1. Are there any cell lines that seem to be consistently sensitive? (Hint: look for the 5 cell lines which seem the most resistant in both studies according to the average drug response by AUC; code from Tutorial 3 may help) What effect might this have on your conclusions and interpretations of the agreement between the studies? For example, do you observe any increase in replicability (as measured by correlation of drug response) if you exclude the most resistant cell lines?
+
+```{r, ic50 by cell line}
+library(tidyr)
+library(dplyr)
+
+fileName <- "summarizedPharmacoData.csv"
+pharmacoData <- read.csv(fileName)
+
+drugAvg <- pharmacoData %>% 
+              group_by(cellLine) %>%
+              summarise(mean_ic50_CCLE = mean(-log10(ic50_CCLE/10^6)), 
+                        mean_ic50_GDSC = mean(-log10(ic50_GDSC/10^6)),
+                        mean_auc_CCLE = mean(auc_CCLE),
+                        mean_auc_GDSC = mean(auc_GDSC)) 
+```
+Ordenar asc
+```{r order}
+so_ccle <- drugAvg[order(drugAvg$mean_auc_CCLE),]
+so_gdsc <- drugAvg[order(drugAvg$mean_auc_GDSC),]
+```
+Obtener nombre del cellLine
+```{r get name}
+so_ccle_name <- so_ccle$cellLine
+so_gdsc_name <- so_gdsc$cellLine
+```
+obtener los primeros cinco
+
+
+2. Classify each cell line as resistant or sensitive to a drug based on its AUC value (Hint: choose a cutoff for which cell lines with AUC below the cutoff are considered sensitive and explain your choice of cutoff(s); code from Tutorial 3 may help). Compare the resistance status of cell lines in GDSC and CCLE for each drug using either a scatterplot of AUC values colored by resistance/sensitivity in each study or a table.
+Read csv file
+```{r rd}
+cellLinesSummary <- read.csv("summarizedPharmacoData.csv", header=TRUE)
+```
+Add sensitivity variable
+```{r add sens}
+cellLinesSummary <- cellLinesSummary %>% 
+              mutate(cutoff = ifelse(drug=="paclitaxel", 0.4, 0.1)) %>%
+              mutate(sensitivity_GDSC = factor(ifelse( auc_GDSC < cutoff, "Resistant", "Sensitive")), 
+                     sensitivity_CCLE = factor(ifelse( auc_CCLE < cutoff, "Resistant", "Sensitive"))) 
+
+table("GDSC"=cellLinesSummary$sensitivity_GDSC, "CCLE"=cellLinesSummary$sensitivity_CCLE)
+```
+Classify each cell line
+```{r class}
+cellLinesSummary <- cellLinesSummary %>% 
+              mutate(category = paste(sensitivity_GDSC, sensitivity_CCLE)) %>%
+              mutate(category = revalue(category, c("Resistant Resistant" = "Both Resistant",
+                                                    "Sensitive Sensitive" = "Both Sensitive",
+                                                    "Resistant Sensitive" = "GDSC Resistant / CCLE Sensitive",
+                                                    "Sensitive Resistant" = "GDSC Sensitive / CCLE Resistant")))
+```
+Create table
+```{r create table}
+table(cellLinesSummary$category)
+```
+Create a scatterplot for all drugs
+```{r scatplt}
+ggplot(aes(x=auc_GDSC, y=auc_CCLE, colour=category), data=cellLinesSummary) +
+    geom_point(cex=0.5) + 
+    facet_wrap(facets=~drug) +
+    xlab("GDSC AUC") +
+    ylab("CCLE AUC") +
+    geom_hline(aes(yintercept=cutoff), colour="grey", alpha=0.75, lty=2) +
+    geom_vline(aes(xintercept=cutoff), colour="grey", alpha=0.75, lty=2)
+```
+
+
+3. Compute the Matthews correlation coefficient for sensitivity status (from #2) of cell lines in GDSC and CCLE for each drug (Hint: code from Tutorial 3 may help). 
+```{r cmpt}
+# Function to calculate the MCC from two vectors with possible values "Sensitive" and "Resistant"
+mcc <- function (study1, study2)
+{
+  BS <- sum(study1 == "Sensitive" & study2 == "Sensitive") 
+  BR <- sum(study1 == "Resistant" & study2 == "Resistant") 
+  SR <- sum(study1 == "Sensitive" & study2 == "Resistant") 
+  RS <- sum(study1 == "Resistant" & study2 == "Sensitive") 
+  
+  if (BS+SR == 0 | BS+RS == 0 | BR+SR == 0 |  BR+RS ==0){
+    mcc <- ((BS*BR)-(SR*RS)) 
+  }else{
+    mcc <- ((BS*BR)-(SR*RS)) / sqrt(exp((log(BS+SR)+log(BS+RS)+log(BR+SR)+log(BR+RS))))
+  }
+  return(mcc)
+}
+
+drugCorrs <- cellLinesSummary %>% 
+  group_by(drug) %>% 
+  summarise(matthews_corr=mcc(sensitivity_GDSC, sensitivity_CCLE))
+
+drugCorrs
+
+ggplot(data=drugCorrs, aes(x=drug, y=matthews_corr)) +
+  geom_bar(stat="identity") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Drug")+
+  ylab("Matthews Correlation Coefficient")
+```
+
+
+### Modeling the relation between two variables (drug concentration vs viability)
+
+1. Explore the response curves for several drug-cell line combinations. How many drugs-cell line combinations contain viability response values that would potentially enable them to be summarized into an IC50 value? You can answer this, for example, by checking whether there are viability values below 50%.
+
+For loading the data into the current working session and define a function that allows us to visualize the relation between drug response and drug concentration.
+```{r get rw}
+rawFile <- "rawPharmacoData.csv"
+summarizedFile <- "summarizedPharmacoData.csv"
+if( !file.exists( rawFile ) ){
+    source("downloadData.R")
+}
+pharmacoData <- read.csv(rawFile)
+summarizedData <- read.csv(summarizedFile)
+library(ggplot2)
+library(dplyr)
+plotResponse <- function(drugA, cellLineA, addPublishedIC50=TRUE ){
+  pharSub <- filter( pharmacoData, drug==drugA, cellLine==cellLineA )
+  sumSub <- filter( summarizedData, drug==drugA, cellLine==cellLineA )
+  p <- ggplot( pharSub, aes( log10(concentration), viability, col=study)) +
+      geom_point(size=2.1) + geom_line(lwd=1.1) + ylim(0, 150)
+  if( addPublishedIC50 ){
+      p <- p + geom_vline( sumSub, xintercept=log10( sumSub[,"ic50_CCLE"] ), col="#d95f02", linetype="longdash") +
+          geom_vline( xintercept=log10( sumSub[,"ic50_GDSC"]), col="#1b9e77", linetype="longdash") +
+          geom_hline( yintercept=50, col="#00000050", linetype="longdash")
+  }
+  p <- p + scale_colour_manual( values = c("CCLE" = "#d95f02", "GDSC" = "#1b9e77" ))
+  xlims <- xlim( range(log10(c(pharSub$concentration, sumSub$ic50_CCLE, sumSub$ic50_GDSC ) ) ) )
+  p + xlims
+}
+```
+The plot define above will visualize the viability scores as a function
+of the drug concentrations in each study. The vertical dotted lines
+display the IC50 value published from each study.
+```{r plot1}
+plotResponse( drugA="Nilotinib", cellLineA="22RV1", TRUE)
+plotResponse( drugA="17-AAG", cellLineA="5637", TRUE)
+plotResponse( drugA="PHA-665752", cellLineA="BT-474", TRUE)
+plotResponse( drugA="TAE684", cellLineA="697", TRUE)
+plotResponse( drugA="Sorafenib", cellLineA="C2BBe1", TRUE)
+plotResponse( drugA="PLX4720", cellLineA="A253", TRUE)
+plotResponse( drugA="PD-0332991", cellLineA="OVCAR-3", TRUE)
+plotResponse( drugA="Nutlin-3", cellLineA="WM-115", TRUE)
+plotResponse( drugA="AZD6244", cellLineA="COLO-320-HSR", TRUE)
+plotResponse( drugA="paclitaxel", cellLineA="OCI-AML2", TRUE)
+```
+
+```{r gt}
+
+library(magrittr)
+
+predictValues <- function( fit, numPred=1000){
+    min <- min( fit$data$concentration )
+    max <- max( fit$data$concentration )
+    valuesToPredict <- seq(min, max, length.out=numPred)
+    predicted <- predict( fit,
+            data.frame(concentration=valuesToPredict),
+            type="response" )
+    data.frame( concentration=valuesToPredict,
+               viability=predicted*100 )
+}
+
+getIC50Value <- function( fit ){
+    if( !fit$converged ){
+      return( NA )
+    }
+    predictValues( fit, numPred=10000 ) %>% 
+    { .$concentration[which.min( abs( .$viability - 50) )] }
+}
+fitLogisticModel <- function(drugA, cellLineA, studyA){
+    pharSub <- filter( pharmacoData, drug==drugA, cellLine==cellLineA, study==studyA)
+    inRange <- pharSub$viability > 0 & pharSub$viability < 100
+    pharSub$viability <- round(pharSub$viability)
+    pharSub$concentration <- log10( pharSub$concentration )
+    maxVal <- pmax( pharSub$viability, 100 )
+    fit <- glm( cbind( viability, maxVal-viability ) ~ concentration,
+               pharSub, family=binomial )
+    fit
+}
+
+lrCCLE1 <- fitLogisticModel( "17-AAG", "H4", "CCLE" )
+lrGDSC1 <- fitLogisticModel( "17-AAG", "H4", "GDSC" )
+
+lrCCLE2 <- fitLogisticModel( "Nilotinib", "22RV1", "CCLE" )
+lrGDSC2 <- fitLogisticModel( "Nilotinib", "22RV1", "GDSC" )
+
+10^getIC50Value( lrCCLE1 )
+10^getIC50Value( lrGDSC1 )
+filter( summarizedData, drug=="17-AAG", cellLine=="H4")[,c("ic50_CCLE", "ic50_GDSC")]
+
+10^getIC50Value( lrCCLE2 )
+10^getIC50Value( lrGDSC2 )
+filter( summarizedData, drug=="Nilotinib", cellLine=="22RV1")[,c("ic50_CCLE", "ic50_GDSC")]
+
+```
+
+There are 3  drugs-cell line combinations out of 10, containing viability response values that would potentially enable to be summarized into an IC50 value.
+
+
+2. Analyze the re-calculations of IC50 and AUCs from the drug 17-AAG in the H4 cell-line and the drug Nilotinib cell-line in the 22RV1 cell-line. See the figure below and asnwer: which statistic is more roboust, IC50 or AUC? Which statistic is more generalizable, IC50 or AUC? Justify your answer with examples and/or using the whole data recalculations from the *mySummarizedData* variable.
+
+Using the logistic models fitted before, let's estimate IC50 
+values by predicting the drug concentration value that the 
+logistic regression model predicts to result in a viability score of 50%. 
+
+```{r gt2}
+
+library(magrittr)
+
+getIC50Value <- function( fit ){
+    if( !fit$converged ){
+      return( NA )
+    }
+    predictValues( fit, numPred=10000 ) %>% 
+    { .$concentration[which.min( abs( .$viability - 50) )] }
+}
+
+10^getIC50Value( lrCCLE1 )
+10^getIC50Value( lrGDSC1 )
+filter( summarizedData, drug=="17-AAG", cellLine=="H4")[,c("ic50_CCLE", "ic50_GDSC")]
+
+10^getIC50Value( lrCCLE2 )
+10^getIC50Value( lrGDSC2 )
+filter( summarizedData, drug=="Nilotinib", cellLine=="22RV1")[,c("ic50_CCLE", "ic50_GDSC")]
+
+```
+
+Let's now calculate AUC values based on the
+logistic regression model.
+
+```{r log r}
+getAUCValue <- function( fit ){
+    numbOfPredictions <- 10000
+    if( !fit$converged ){
+      return( NA )
+    }
+    x <- 1 - ( predictValues( fit, numPred=numbOfPredictions )$viability / 100 ) ## difference between 1 and the predicted viability probability
+    x <- sum( x ) ## summing all the predicted values
+    x / numbOfPredictions ## normalize such that the total area sums to 1
+}
+
+getAUCValue( lrCCLE1 )
+getAUCValue( lrGDSC1 )
+filter( summarizedData, drug=="17-AAG", cellLine=="H4")
+
+getAUCValue( lrCCLE2 )
+getAUCValue( lrGDSC2 )
+filter( summarizedData, drug=="Nilotinib", cellLine=="22RV1")
+
+```
+
+## Discussion:
+
+Summarize the main findings of your analyses in the previous four sections here. 
+
+
+
+
